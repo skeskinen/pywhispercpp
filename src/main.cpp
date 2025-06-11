@@ -21,6 +21,9 @@
 #define STRINGIFY(x) #x
 #define MACRO_STRINGIFY(x) STRINGIFY(x)
 
+#define DEF_RELEASE_GIL(name, fn, doc) \
+    m.def(name, fn, doc, py::call_guard<py::gil_scoped_release>())
+
 
 namespace py = pybind11;
 using namespace pybind11::literals; // to bring in the `_a` literal
@@ -293,6 +296,8 @@ public:
             auto* self = static_cast<WhisperFullParamsWrapper*>(user_data);
             if(self && self->print_progress){
                 if (self->py_progress_callback) {
+                // call the python callback
+                    py::gil_scoped_acquire gil;
                     self->py_progress_callback(progress);  // Call Python callback
                 }
                 else {
@@ -304,7 +309,7 @@ public:
 
     WhisperFullParamsWrapper(const WhisperFullParamsWrapper& other)
         : WhisperFullParamsWrapper(static_cast<const whisper_full_params&>(other)) {}
-    
+
     void set_initial_prompt(const std::string& prompt) {
         initial_prompt_str = prompt;
         initial_prompt = initial_prompt_str.c_str();
@@ -326,7 +331,7 @@ void _new_segment_callback(struct whisper_context * ctx, struct whisper_state * 
     struct whisper_context_wrapper ctx_w;
     ctx_w.ptr = ctx;
     // call the python callback
-//    py::gil_scoped_acquire gil;  // Acquire the GIL while in this scope.
+    py::gil_scoped_acquire gil;  // Acquire the GIL while in this scope.
     py_new_segment_callback(ctx_w, n_new, user_data);
 };
 
@@ -407,13 +412,13 @@ PYBIND11_MODULE(_pywhispercpp, m) {
     py::class_<whisper_model_loader_wrapper>(m,"whisper_model_loader")
             .def(py::init<>());
 
-    m.def("whisper_init_from_file", &whisper_init_from_file_wrapper, "Various functions for loading a ggml whisper model.\n"
+    DEF_RELEASE_GIL("whisper_init_from_file", &whisper_init_from_file_wrapper, "Various functions for loading a ggml whisper model.\n"
                                                                     "Allocate (almost) all memory needed for the model.\n"
                                                                     "Return NULL on failure");
-    m.def("whisper_init_from_buffer", &whisper_init_from_buffer_wrapper, "Various functions for loading a ggml whisper model.\n"
+    DEF_RELEASE_GIL("whisper_init_from_buffer", &whisper_init_from_buffer_wrapper, "Various functions for loading a ggml whisper model.\n"
                                                                         "Allocate (almost) all memory needed for the model.\n"
                                                                         "Return NULL on failure");
-    m.def("whisper_init", &whisper_init_wrapper, "Various functions for loading a ggml whisper model.\n"
+    DEF_RELEASE_GIL("whisper_init", &whisper_init_wrapper, "Various functions for loading a ggml whisper model.\n"
                                                 "Allocate (almost) all memory needed for the model.\n"
                                                 "Return NULL on failure");
 
@@ -504,7 +509,7 @@ PYBIND11_MODULE(_pywhispercpp, m) {
         .export_values();
 
     py::class_<whisper_full_params>(m, "__whisper_full_params__internal")
-        .def(py::init<>()) 
+        .def(py::init<>())
         .def("__repr__", [](const whisper_full_params& self) {
             std::ostringstream oss;
             oss << "whisper_full_params("
@@ -581,7 +586,7 @@ PYBIND11_MODULE(_pywhispercpp, m) {
         .def_readwrite("split_on_word", &WhisperFullParamsWrapper::split_on_word)
         .def_readwrite("max_tokens", &WhisperFullParamsWrapper::max_tokens)
         .def_readwrite("audio_ctx", &WhisperFullParamsWrapper::audio_ctx)
-        .def_property("suppress_regex", 
+        .def_property("suppress_regex",
             [](WhisperFullParamsWrapper &self) {
                 return py::str(self.suppress_regex ? self.suppress_regex : "");
             },
@@ -598,14 +603,14 @@ PYBIND11_MODULE(_pywhispercpp, m) {
         )
         .def_readwrite("prompt_tokens", &WhisperFullParamsWrapper::prompt_tokens)
         .def_readwrite("prompt_n_tokens", &WhisperFullParamsWrapper::prompt_n_tokens)
-        .def_property("language", 
-            [](WhisperFullParamsWrapper &self) { 
-                return py::str(self.language); 
+        .def_property("language",
+            [](WhisperFullParamsWrapper &self) {
+                return py::str(self.language);
             },
             [](WhisperFullParamsWrapper &self, const char *new_c) {// using lang_id let us avoid issues with memory management
                 const int lang_id = (new_c && strlen(new_c) > 0) ? whisper_lang_id(new_c) : -1;
                 if (lang_id != -1) {
-                    self.language = whisper_lang_str(lang_id);    
+                    self.language = whisper_lang_str(lang_id);
                 } else {
                     self.language = ""; //defaults to auto-detect
                 }
@@ -629,17 +634,17 @@ PYBIND11_MODULE(_pywhispercpp, m) {
 
 
     py::implicitly_convertible<whisper_full_params, WhisperFullParamsWrapper>();
-    
+
     m.def("whisper_full_default_params", &whisper_full_default_params_wrapper);
 
-    m.def("whisper_full", &whisper_full_wrapper, "Run the entire model: PCM -> log mel spectrogram -> encoder -> decoder -> text\n"
+    DEF_RELEASE_GIL("whisper_full", &whisper_full_wrapper, "Run the entire model: PCM -> log mel spectrogram -> encoder -> decoder -> text\n"
                                                  "Uses the specified decoding strategy to obtain the text.\n");
 
-    m.def("whisper_full_parallel", &whisper_full_parallel_wrapper, "Split the input audio in chunks and process each chunk separately using whisper_full()\n"
+    DEF_RELEASE_GIL("whisper_full_parallel", &whisper_full_parallel_wrapper, "Split the input audio in chunks and process each chunk separately using whisper_full()\n"
                                                                     "It seems this approach can offer some speedup in some cases.\n"
                                                                     "However, the transcription accuracy can be worse at the beginning and end of each chunk.");
 
-    m.def("whisper_full_n_segments", &whisper_full_n_segments_wrapper, "Number of generated text segments.\n"
+    DEF_RELEASE_GIL("whisper_full_n_segments", &whisper_full_n_segments_wrapper, "Number of generated text segments.\n"
                                                                        "A segment can be a few words, a sentence, or even a paragraph.\n");
 
     m.def("whisper_full_lang_id", &whisper_full_lang_id_wrapper, "Language id associated with the current context");
