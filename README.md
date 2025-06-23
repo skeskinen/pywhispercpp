@@ -17,6 +17,7 @@ Python bindings for [whisper.cpp](https://github.com/ggerganov/whisper.cpp) with
 * [Quick start](#quick-start)
 * [Examples](#examples)
   * [CLI](#cli)
+  * [GUI](#gui)
   * [Assistant](#assistant)
 * [Advanced usage](#advanced-usage)
 * [Discussions and contributions](#discussions-and-contributions)
@@ -227,8 +228,26 @@ options:
 
 ```
 
-## Assistant
+## GUI
+If you prefer a Graphical User Interface, you can use the `pwcpp-gui` command which will launch A simple graphical interface built with PyQt5. 
+* First you need to install the GUI dependencies:
+```bash
+pip install pywhispercpp[gui]
+```
 
+* Then you can run the GUI with:
+```bash
+pwcpp-gui
+```
+
+The GUI provides a user-friendly way to:
+
+- Select audio files
+- Choose models
+- Adjust basic transcription settings
+- View and export transcription results
+
+## Assistant
 This is a simple example showcasing the use of `pywhispercpp` to create an assistant like example. 
 The idea is to use a Voice Activity Detector (VAD) to detect speech (in this example, we used webrtcvad), and when some speech is detected, we run the transcription. 
 It is inspired from the [whisper.cpp/examples/command](https://github.com/ggerganov/whisper.cpp/tree/master/examples/command) example.
@@ -284,4 +303,3 @@ If you have any feedback, or you want to share how you are using this project, f
 # License
 
 This project is licensed under the same license as [whisper.cpp](https://github.com/ggerganov/whisper.cpp/blob/master/LICENSE) (MIT  [License](./LICENSE)).
-
