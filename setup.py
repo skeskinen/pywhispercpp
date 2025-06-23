@@ -1,4 +1,3 @@
-
 # This setup.py is used to build the pywhispercpp package.
 # The environment variables you may find interesting are:
 #
@@ -24,6 +23,7 @@ import subprocess
 from setuptools import Extension, setup, find_packages
 from setuptools.command.build_ext import build_ext
 from setuptools.command.bdist_wheel import bdist_wheel
+
 # Convert distutils Windows platform specifiers to CMake -A arguments
 PLAT_TO_CMAKE = {
     "win32": "Win32",
@@ -41,7 +41,9 @@ class CMakeExtension(Extension):
         super().__init__(name, sources=[])
         self.sourcedir = os.fspath(Path(sourcedir).resolve())
 
+
 dll_folder = 'unset'
+
 
 class CMakeBuild(build_ext):
     def build_extension(self, ext: CMakeExtension) -> None:
@@ -134,7 +136,7 @@ class CMakeBuild(build_ext):
             archs = re.findall(r"-arch (\S+)", os.environ.get("ARCHFLAGS", ""))
             if archs:
                 cmake_args += ["-DCMAKE_OSX_ARCHITECTURES={}".format(";".join(archs))]
-            
+
         # Set CMAKE_BUILD_PARALLEL_LEVEL to control the parallel build level
         # across all generators.
         if "CMAKE_BUILD_PARALLEL_LEVEL" not in os.environ:
@@ -157,17 +159,17 @@ class CMakeBuild(build_ext):
         subprocess.run(
             ["cmake", "--build", ".", *build_args], cwd=build_temp, check=True
         )
-    
+
         # store the dll folder in a global variable to use in repairwheel
         global dll_folder
         cfg = "Debug" if self.debug else "Release"
         dll_folder = os.path.join(self.build_temp, '_pywhispercpp', 'bin', cfg)
         print("dll_folder in build_extension", dll_folder)
-        #self.copy_extensions_to_source()
+        # self.copy_extensions_to_source()
 
     def copy_extensions_to_source(self):
         super().copy_extensions_to_source()
-       
+
         if self.editable_mode:
             build_lib = Path(self.build_lib)
             for ext in self.extensions:
@@ -196,10 +198,10 @@ class RepairWheel(bdist_wheel):
     def repair_wheel(self):
         # on windows the dlls are in D:\a\pywhispercpp\pywhispercpp\build\temp.win-amd64-cpython-311\Release\_pywhispercpp\bin\Release\whisper.dll
         global dll_folder
-        print("dll_folder in repairwheel",dll_folder) 
+        print("dll_folder in repairwheel", dll_folder)
         print("Files in dll_folder:", *Path(dll_folder).glob('*'))
-        #build\temp.win-amd64-cpython-311\Release\_pywhispercpp\bin\Release\whisper.dll
-       
+        # build\temp.win-amd64-cpython-311\Release\_pywhispercpp\bin\Release\whisper.dll
+
         wheel_path = next(Path(self.dist_dir).glob(f"{self.distribution.get_name()}*.whl"))
         # Create a temporary directory for the repaired wheel
         import tempfile
@@ -213,14 +215,16 @@ class RepairWheel(bdist_wheel):
             repaired_wheel = next(tmp_dir.glob("*.whl"))
             self.copy_file(repaired_wheel, wheel_path)
             print(f"Copied repaired wheel to: {wheel_path}")
-            
+
+
 def get_local_version() -> str:
     try:
         git_sha = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
         return f"+git{git_sha[:7]}"
     except (FileNotFoundError, subprocess.CalledProcessError):
         return ""
-    
+
+
 def get_version() -> str:
     try:
         return os.environ['PYWHISPERCPP_VERSION']
@@ -229,6 +233,7 @@ def get_version() -> str:
     with open("version.txt") as f:
         version = f.read().strip()
     return f"{version}{get_local_version()}"
+
 
 # The information here can also be placed in setup.cfg - better separation of
 # logic and declaration, and simpler if you include description/version in a file.
@@ -239,7 +244,7 @@ setup(
     long_description=long_description,
     ext_modules=[CMakeExtension("_pywhispercpp")],
     cmdclass={"build_ext": CMakeBuild,
-             'bdist_wheel': RepairWheel,},
+              'bdist_wheel': RepairWheel, },
     zip_safe=False,
     # extras_require={"test": ["pytest>=6.0"]},
     python_requires=">=3.8",
@@ -253,7 +258,8 @@ setup(
         'console_scripts': ['pwcpp=pywhispercpp.examples.main:main',
                             'pwcpp-assistant=pywhispercpp.examples.assistant:_main',
                             'pwcpp-livestream=pywhispercpp.examples.livestream:_main',
-                            'pwcpp-recording=pywhispercpp.examples.recording:_main']
+                            'pwcpp-recording=pywhispercpp.examples.recording:_main',
+                            'pwcpp-gui=pywhispercpp.examples.gui:_main', ]
     },
     project_urls={
         'Documentation': 'https://absadiki.github.io/pywhispercpp/',
@@ -261,5 +267,6 @@ setup(
         'Tracker': 'https://github.com/absadiki/pywhispercpp/issues',
     },
     install_requires=['numpy', "requests", "tqdm", "platformdirs"],
-    extras_require={"examples": ["sounddevice", "webrtcvad"]},
+    extras_require={"examples": ["sounddevice", "webrtcvad"],
+                    "gui": ["pyqt5"]},
 )
