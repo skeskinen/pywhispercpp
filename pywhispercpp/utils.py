@@ -1,18 +1,25 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
 """
 Helper functions
 """
+
 import contextlib
 import logging
 import os
 import sys
 from pathlib import Path
+from typing import TextIO
+
 import requests
 from tqdm import tqdm
-from pywhispercpp.constants import MODELS_BASE_URL, MODELS_PREFIX_URL, AVAILABLE_MODELS, MODELS_DIR
 
+from pywhispercpp.constants import (
+    AVAILABLE_MODELS,
+    MODELS_BASE_URL,
+    MODELS_DIR,
+    MODELS_PREFIX_URL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +192,7 @@ def output_csv(segments: list, output_file_path: str) -> str:
 
 
 @contextlib.contextmanager
-def redirect_stderr(to=False) -> None:
+def redirect_stderr(to: bool | TextIO | str | None = False) -> None:
     """
     Redirect stderr to the specified target.
 
@@ -201,45 +208,45 @@ def redirect_stderr(to=False) -> None:
         yield
         return
 
+    def _resolve_target(target):
+        opened_stream = None
+        if target is None:
+            opened_stream = open(os.devnull, "w")
+            return opened_stream, True
+        if isinstance(target, str):
+            opened_stream = open(target, "w")
+            return opened_stream, True
+        if hasattr(target, "write"):
+            return target, False
+        raise ValueError(
+            "Invalid `to` parameter; expected None, a filepath string, or a file-like object."
+        )
+
     sys.stderr.flush()
     try:
-        original_stderr_fd = sys.stderr.fileno()
-        has_fileno = True
+        original_fd = sys.stderr.fileno()
     except (AttributeError, OSError):
         # Jupyter or non-standard stderr implementations
-        has_fileno = False
+        original_fd = None
 
-    if has_fileno:
-        if to is None:
-            target_fd = os.open(os.devnull, os.O_WRONLY)
-        elif isinstance(to, str):
-            file = open(to, 'w')
-            target_fd = file.fileno()
-        elif hasattr(to, 'fileno'):
-            target_fd = to.fileno()
-        else:
-            raise ValueError("Invalid `to` parameter; must be None, a filepath string, or sys.stdout/sys.stderr.")
-        os.dup2(target_fd, original_stderr_fd)
+    stream, should_close = _resolve_target(to)
+
+    if original_fd is not None and hasattr(stream, "fileno"):
+        saved_fd = os.dup(original_fd)
         try:
+            os.dup2(stream.fileno(), original_fd)
             yield
         finally:
-            os.dup2(original_stderr_fd, original_stderr_fd)
-            if isinstance(to, str):
-                file.close()
-            elif to is None:
-                os.close(target_fd)
-    else:
-        # Replace sys.stderr directly
-        original_stderr = sys.stderr
-        if to is None:
-            sys.stderr = open(os.devnull, 'w')
-        elif isinstance(to, str):
-            sys.stderr = open(to, 'w')
-        elif hasattr(to, 'write'):
-            sys.stderr = to
-        try:
+            os.dup2(saved_fd, original_fd)
+            os.close(saved_fd)
+            if should_close:
+                stream.close()
+        return
+
+    # Fallback: Python-level redirect
+    try:
+        with contextlib.redirect_stderr(stream):
             yield
-        finally:
-            sys.stderr = original_stderr
-            if isinstance(to, str) or to is None:
-                sys.stderr.close()
+    finally:
+        if should_close:
+            stream.close()
