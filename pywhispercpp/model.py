@@ -157,15 +157,15 @@ class Model:
             bytes = pw.whisper_full_get_segment_text(ctx, i)
             text = bytes.decode('utf-8', errors='replace')
             n_tokens = pw.whisper_full_n_tokens(ctx, i)
-            if n_tokens == 0:
-                avg_prob = 0.0
-            elif n_tokens == 1:
+            if n_tokens == 1:
                 avg_prob = pw.whisper_full_get_token_p(ctx, i, 0)
-            else:
+            elif n_tokens > 1:
                 probs = np.empty(n_tokens, dtype=np.float32)
                 for j in range(n_tokens):
                     probs[j] = pw.whisper_full_get_token_p(ctx, i, j)
                 avg_prob = probs.mean()
+            else:
+                avg_prob = 0.0
             res.append(Segment(t0, t1, text.strip(), probability=np.float32(avg_prob)))
         return res
 
