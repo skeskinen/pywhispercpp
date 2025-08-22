@@ -11,7 +11,7 @@ import shutil
 import sys
 from pathlib import Path
 from time import time
-from typing import Union, Callable, List, TextIO, Tuple
+from typing import Union, Callable, List, TextIO, Tuple, Optional
 import _pywhispercpp as pw
 import numpy as np
 import pywhispercpp.utils as utils
@@ -34,7 +34,7 @@ class Segment:
     A small class representing a transcription segment
     """
 
-    def __init__(self, t0: int, t1: int, text: str, probability: float = 0.0):
+    def __init__(self, t0: int, t1: int, text: str, probability: float = np.nan):
         """
         :param t0: start time
         :param t1: end time
@@ -122,6 +122,10 @@ class Model:
             if not Path(media).exists():
                 raise FileNotFoundError(media)
             audio = self._load_audio(media)
+
+        # Handle extract_probability parameter
+        self.extract_probability = params.pop('extract_probability', False)
+
         # update params if any
         self._set_params(params)
 
@@ -139,12 +143,14 @@ class Model:
         return res
 
     @staticmethod
-    def _get_segments(ctx, start: int, end: int) -> List[Segment]:
+    def _get_segments(ctx, start: int, end: int, extract_probability: bool = False) -> List[Segment]:
         """
         Helper function to get generated segments between `start` and `end`
 
+        :param ctx: whisper context
         :param start: start index
         :param end: end index
+        :param extract_probability: whether to calculate token probabilities
 
         :return: list of segments
         """
@@ -156,16 +162,22 @@ class Model:
             t1 = pw.whisper_full_get_segment_t1(ctx, i)
             bytes = pw.whisper_full_get_segment_text(ctx, i)
             text = bytes.decode('utf-8', errors='replace')
-            n_tokens = pw.whisper_full_n_tokens(ctx, i)
-            if n_tokens == 1:
-                avg_prob = pw.whisper_full_get_token_p(ctx, i, 0)
-            elif n_tokens > 1:
-                total_logprob = 0.0
-                for j in range(n_tokens):
-                    total_logprob += np.log(pw.whisper_full_get_token_p(ctx, i, j))
-                avg_prob = np.exp(total_logprob / n_tokens)
-            else:
-                avg_prob = 0.0
+
+            avg_prob = np.nan
+
+            # Only calculate probabilities if requested
+            if extract_probability:
+                n_tokens = pw.whisper_full_n_tokens(ctx, i)
+                if n_tokens == 1:
+                    avg_prob = pw.whisper_full_get_token_p(ctx, i, 0)
+                elif n_tokens > 1:
+                    total_logprob = 0.0
+                    for j in range(n_tokens):
+                        total_logprob += np.log(pw.whisper_full_get_token_p(ctx, i, j))
+                    avg_prob = np.exp(total_logprob / n_tokens)
+                else:
+                    avg_prob = np.nan
+
             res.append(Segment(t0, t1, text.strip(), probability=np.float32(avg_prob)))
         return res
 
@@ -265,7 +277,7 @@ class Model:
         else:
             pw.whisper_full(self._ctx, self._params, audio, audio.size)
         n = pw.whisper_full_n_segments(self._ctx)
-        res = Model._get_segments(self._ctx, 0, n)
+        res = Model._get_segments(self._ctx, 0, n, self.extract_probability)
         return res
 
     @staticmethod
@@ -279,7 +291,7 @@ class Model:
         """
         n = pw.whisper_full_n_segments(ctx)
         start = n - n_new
-        res = Model._get_segments(ctx, start, n)
+        res = Model._get_segments(ctx, start, n, False)
         for segment in res:
             Model._new_segment_callback(segment)
 
