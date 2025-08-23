@@ -39,7 +39,9 @@ class Segment:
         :param t0: start time
         :param t1: end time
         :param text: text
-        :param probability: average token confidence
+        :param probability: Confidence score for the segment, computed as the geometric mean of
+            the token probabilities for the segment (NaN if not calculated).
+            This makes it interpretable as a probability in [0, 1].
         """
         self.t0 = t0
         self.t1 = t1
@@ -113,7 +115,8 @@ class Model:
                              > Split the input audio in chunks and process each chunk separately using whisper_full()
         :param new_segment_callback: callback function that will be called when a new segment is generated
         :param params: keyword arguments for different whisper.cpp parameters, see ::: constants.PARAMS_SCHEMA
-
+        :param extract_probability: If True, calculates the geometric mean of token probabilities for each segment,
+            providing a confidence score interpretable as a probability in [0, 1].
         :return: List of transcription segments
         """
         if type(media) is np.ndarray:
