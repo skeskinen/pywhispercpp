@@ -11,7 +11,7 @@ import shutil
 import sys
 from pathlib import Path
 from time import time
-from typing import Union, Callable, List, TextIO, Tuple
+from typing import Union, Callable, List, TextIO, Tuple, Optional
 import _pywhispercpp as pw
 import numpy as np
 import pywhispercpp.utils as utils
@@ -34,18 +34,22 @@ class Segment:
     A small class representing a transcription segment
     """
 
-    def __init__(self, t0: int, t1: int, text: str):
+    def __init__(self, t0: int, t1: int, text: str, probability: float = np.nan):
         """
         :param t0: start time
         :param t1: end time
         :param text: text
+        :param probability: Confidence score for the segment, computed as the geometric mean of
+            the token probabilities for the segment (NaN if not calculated).
+            This makes it interpretable as a probability in [0, 1].
         """
         self.t0 = t0
         self.t1 = t1
         self.text = text
+        self.probability = probability
 
     def __str__(self):
-        return f"t0={self.t0}, t1={self.t1}, text={self.text}"
+        return f"t0={self.t0}, t1={self.t1}, text={self.text}, probability={self.probability}"
 
     def __repr__(self):
         return str(self)
@@ -111,7 +115,8 @@ class Model:
                              > Split the input audio in chunks and process each chunk separately using whisper_full()
         :param new_segment_callback: callback function that will be called when a new segment is generated
         :param params: keyword arguments for different whisper.cpp parameters, see ::: constants.PARAMS_SCHEMA
-
+        :param extract_probability: If True, calculates the geometric mean of token probabilities for each segment,
+            providing a confidence score interpretable as a probability in [0, 1].
         :return: List of transcription segments
         """
         if type(media) is np.ndarray:
@@ -120,6 +125,10 @@ class Model:
             if not Path(media).exists():
                 raise FileNotFoundError(media)
             audio = self._load_audio(media)
+
+        # Handle extract_probability parameter
+        self.extract_probability = params.pop('extract_probability', False)
+
         # update params if any
         self._set_params(params)
 
@@ -137,12 +146,14 @@ class Model:
         return res
 
     @staticmethod
-    def _get_segments(ctx, start: int, end: int) -> List[Segment]:
+    def _get_segments(ctx, start: int, end: int, extract_probability: bool = False) -> List[Segment]:
         """
         Helper function to get generated segments between `start` and `end`
 
+        :param ctx: whisper context
         :param start: start index
         :param end: end index
+        :param extract_probability: whether to calculate token probabilities
 
         :return: list of segments
         """
@@ -153,8 +164,24 @@ class Model:
             t0 = pw.whisper_full_get_segment_t0(ctx, i)
             t1 = pw.whisper_full_get_segment_t1(ctx, i)
             bytes = pw.whisper_full_get_segment_text(ctx, i)
-            text = bytes.decode('utf-8',errors='replace')
-            res.append(Segment(t0, t1, text.strip()))
+            text = bytes.decode('utf-8', errors='replace')
+
+            avg_prob = np.nan
+
+            # Only calculate probabilities if requested
+            if extract_probability:
+                n_tokens = pw.whisper_full_n_tokens(ctx, i)
+                if n_tokens == 1:
+                    avg_prob = pw.whisper_full_get_token_p(ctx, i, 0)
+                elif n_tokens > 1:
+                    total_logprob = 0.0
+                    for j in range(n_tokens):
+                        total_logprob += np.log(pw.whisper_full_get_token_p(ctx, i, j))
+                    avg_prob = np.exp(total_logprob / n_tokens)
+                else:
+                    avg_prob = np.nan
+
+            res.append(Segment(t0, t1, text.strip(), probability=np.float32(avg_prob)))
         return res
 
     def get_params(self) -> dict:
@@ -242,7 +269,7 @@ class Model:
     def _transcribe(self, audio: np.ndarray, n_processors: int = None):
         """
         Private method to call the whisper.cpp/whisper_full function
-    
+
         :param audio: numpy array of audio data
         :param n_processors: if not None, it will run whisper.cpp/whisper_full_parallel with n_processors
         :return:
@@ -253,7 +280,7 @@ class Model:
         else:
             pw.whisper_full(self._ctx, self._params, audio, audio.size)
         n = pw.whisper_full_n_segments(self._ctx)
-        res = Model._get_segments(self._ctx, 0, n)
+        res = Model._get_segments(self._ctx, 0, n, self.extract_probability)
         return res
 
     @staticmethod
@@ -267,7 +294,7 @@ class Model:
         """
         n = pw.whisper_full_n_segments(ctx)
         start = n - n_new
-        res = Model._get_segments(ctx, start, n)
+        res = Model._get_segments(ctx, start, n, False)
         for segment in res:
             Model._new_segment_callback(segment)
 
