@@ -284,80 +284,17 @@ float whisper_full_get_token_p_wrapper(struct whisper_context_wrapper * ctx, int
     return whisper_full_get_token_p(ctx->ptr, i_segment, i_token);
 }
 
-// VAD wrapper functions
-struct whisper_vad_context_wrapper {
-    whisper_vad_context* ptr;
-};
-
-struct whisper_vad_segments_wrapper {
-    whisper_vad_segments* ptr;
-};
-
-struct whisper_vad_context_wrapper whisper_vad_init_from_file_with_params_wrapper(
-        const char * path_model, 
-        struct whisper_vad_context_params params) {
-    struct whisper_vad_context * ctx = whisper_vad_init_from_file_with_params(path_model, params);
-    struct whisper_vad_context_wrapper ctx_w;
-    ctx_w.ptr = ctx;
-    return ctx_w;
-}
-
-bool whisper_vad_detect_speech_wrapper(
-        struct whisper_vad_context_wrapper * vctx,
-        py::array_t<float> pcmf32,
-        int n_samples) {
-    py::buffer_info buf = pcmf32.request();
-    float *samples_ptr = static_cast<float *>(buf.ptr);
-    return whisper_vad_detect_speech(vctx->ptr, samples_ptr, n_samples);
-}
-
-struct whisper_vad_segments_wrapper whisper_vad_segments_from_samples_wrapper(
-        struct whisper_vad_context_wrapper * vctx,
-        struct whisper_vad_params params,
-        py::array_t<float> pcmf32,
-        int n_samples) {
-    py::buffer_info buf = pcmf32.request();
-    float *samples_ptr = static_cast<float *>(buf.ptr);
-    struct whisper_vad_segments * segments = whisper_vad_segments_from_samples(vctx->ptr, params, samples_ptr, n_samples);
-    struct whisper_vad_segments_wrapper segments_w;
-    segments_w.ptr = segments;
-    return segments_w;
-}
-
-int whisper_vad_segments_n_segments_wrapper(struct whisper_vad_segments_wrapper * segments) {
-    return whisper_vad_segments_n_segments(segments->ptr);
-}
-
-float whisper_vad_segments_get_segment_t0_wrapper(struct whisper_vad_segments_wrapper * segments, int i_segment) {
-    return whisper_vad_segments_get_segment_t0(segments->ptr, i_segment);
-}
-
-float whisper_vad_segments_get_segment_t1_wrapper(struct whisper_vad_segments_wrapper * segments, int i_segment) {
-    return whisper_vad_segments_get_segment_t1(segments->ptr, i_segment);
-}
-
-void whisper_vad_free_segments_wrapper(struct whisper_vad_segments_wrapper * segments) {
-    whisper_vad_free_segments(segments->ptr);
-}
-
-void whisper_vad_free_wrapper(struct whisper_vad_context_wrapper * vctx) {
-    whisper_vad_free(vctx->ptr);
-}
-
 class WhisperFullParamsWrapper : public whisper_full_params {
     std::string initial_prompt_str;   
-    std::string suppress_regex_str;
-    std::string vad_model_path_str;      
+    std::string suppress_regex_str;      
 public:
     py::function py_progress_callback;
     WhisperFullParamsWrapper(const whisper_full_params& params = whisper_full_params())
         : whisper_full_params(params),  
         initial_prompt_str(params.initial_prompt ? params.initial_prompt : ""),
-        suppress_regex_str(params.suppress_regex ? params.suppress_regex : ""),
-        vad_model_path_str(params.vad_model_path ? params.vad_model_path : "") {
+        suppress_regex_str(params.suppress_regex ? params.suppress_regex : "") {
         initial_prompt = initial_prompt_str.empty() ? nullptr : initial_prompt_str.c_str();
         suppress_regex = suppress_regex_str.empty() ? nullptr : suppress_regex_str.c_str();
-        vad_model_path = vad_model_path_str.empty() ? nullptr : vad_model_path_str.c_str();
         // progress callback
         progress_callback_user_data = this;
         progress_callback = [](struct whisper_context* ctx, struct whisper_state* state, int progress, void* user_data) {
@@ -386,11 +323,6 @@ public:
     void set_suppress_regex(const std::string& regex) {
         suppress_regex_str = regex;
         suppress_regex = suppress_regex_str.c_str();
-    }
-
-    void set_vad_model_path(const std::string& path) {
-        vad_model_path_str = path;
-        vad_model_path = vad_model_path_str.empty() ? nullptr : vad_model_path_str.c_str();
     }
 };
 
@@ -703,47 +635,7 @@ PYBIND11_MODULE(_pywhispercpp, m) {
                                 [](WhisperFullParamsWrapper &self, py::dict dict) {self.beam_search.beam_size = dict["beam_size"].cast<int>(); self.beam_search.patience = dict["patience"].cast<float>();})
         .def_readwrite("new_segment_callback_user_data", &WhisperFullParamsWrapper::new_segment_callback_user_data)
         .def_readwrite("encoder_begin_callback_user_data", &WhisperFullParamsWrapper::encoder_begin_callback_user_data)
-        .def_readwrite("logits_filter_callback_user_data", &WhisperFullParamsWrapper::logits_filter_callback_user_data)
-        // VAD parameters
-        .def_readwrite("vad", &WhisperFullParamsWrapper::vad)
-        .def_property("vad_model_path",
-            [](WhisperFullParamsWrapper &self) {
-                return py::str(self.vad_model_path ? self.vad_model_path : "");
-            },
-            [](WhisperFullParamsWrapper &self, const std::string &path) {
-                self.set_vad_model_path(path);
-            })
-        .def_property("vad_params", 
-            [](WhisperFullParamsWrapper &self) {
-                return py::dict(
-                    "threshold"_a=self.vad_params.threshold,
-                    "min_speech_duration_ms"_a=self.vad_params.min_speech_duration_ms,
-                    "min_silence_duration_ms"_a=self.vad_params.min_silence_duration_ms,
-                    "max_speech_duration_s"_a=self.vad_params.max_speech_duration_s,
-                    "speech_pad_ms"_a=self.vad_params.speech_pad_ms,
-                    "samples_overlap"_a=self.vad_params.samples_overlap
-                );
-            },
-            [](WhisperFullParamsWrapper &self, py::dict dict) {
-                if (dict.contains("threshold")) {
-                    self.vad_params.threshold = dict["threshold"].cast<float>();
-                }
-                if (dict.contains("min_speech_duration_ms")) {
-                    self.vad_params.min_speech_duration_ms = dict["min_speech_duration_ms"].cast<int>();
-                }
-                if (dict.contains("min_silence_duration_ms")) {
-                    self.vad_params.min_silence_duration_ms = dict["min_silence_duration_ms"].cast<int>();
-                }
-                if (dict.contains("max_speech_duration_s")) {
-                    self.vad_params.max_speech_duration_s = dict["max_speech_duration_s"].cast<float>();
-                }
-                if (dict.contains("speech_pad_ms")) {
-                    self.vad_params.speech_pad_ms = dict["speech_pad_ms"].cast<int>();
-                }
-                if (dict.contains("samples_overlap")) {
-                    self.vad_params.samples_overlap = dict["samples_overlap"].cast<float>();
-                }
-            });
+        .def_readwrite("logits_filter_callback_user_data", &WhisperFullParamsWrapper::logits_filter_callback_user_data);
 
 
     py::implicitly_convertible<whisper_full_params, WhisperFullParamsWrapper>();
@@ -793,55 +685,6 @@ PYBIND11_MODULE(_pywhispercpp, m) {
     m.def("assign_logits_filter_callback", &assign_logits_filter_callback, "Assigns a logits_filter_callback, takes <whisper_full_params> instance and a callable function with the same parameters which are defined in the interface",
             py::arg("params"), py::arg("callback"));
 
-    ////////////////////////////////////////////////////////////////////////////
-    // VAD API bindings
-    
-    py::class_<whisper_vad_context_wrapper>(m, "whisper_vad_context");
-    py::class_<whisper_vad_segments_wrapper>(m, "whisper_vad_segments");
-    
-    py::class_<whisper_vad_params>(m, "whisper_vad_params")
-        .def(py::init<>())
-        .def_readwrite("threshold", &whisper_vad_params::threshold)
-        .def_readwrite("min_speech_duration_ms", &whisper_vad_params::min_speech_duration_ms)
-        .def_readwrite("min_silence_duration_ms", &whisper_vad_params::min_silence_duration_ms)
-        .def_readwrite("max_speech_duration_s", &whisper_vad_params::max_speech_duration_s)
-        .def_readwrite("speech_pad_ms", &whisper_vad_params::speech_pad_ms)
-        .def_readwrite("samples_overlap", &whisper_vad_params::samples_overlap);
-    
-    py::class_<whisper_vad_context_params>(m, "whisper_vad_context_params")
-        .def(py::init<>())
-        .def_readwrite("n_threads", &whisper_vad_context_params::n_threads)
-        .def_readwrite("use_gpu", &whisper_vad_context_params::use_gpu)
-        .def_readwrite("gpu_device", &whisper_vad_context_params::gpu_device);
-    
-    m.def("whisper_vad_default_params", &whisper_vad_default_params, "Get default VAD parameters");
-    m.def("whisper_vad_default_context_params", &whisper_vad_default_context_params, "Get default VAD context parameters");
-    
-    DEF_RELEASE_GIL("whisper_vad_init_from_file_with_params", &whisper_vad_init_from_file_with_params_wrapper, 
-                    "Initialize VAD context from model file");
-    
-    m.def("whisper_vad_detect_speech", &whisper_vad_detect_speech_wrapper, 
-          "Detect speech in audio samples", 
-          py::arg("vctx"), py::arg("pcmf32"), py::arg("n_samples"));
-    
-    m.def("whisper_vad_segments_from_samples", &whisper_vad_segments_from_samples_wrapper,
-          "Get VAD segments from audio samples",
-          py::arg("vctx"), py::arg("params"), py::arg("pcmf32"), py::arg("n_samples"));
-    
-    m.def("whisper_vad_segments_n_segments", &whisper_vad_segments_n_segments_wrapper,
-          "Get number of VAD segments");
-    
-    m.def("whisper_vad_segments_get_segment_t0", &whisper_vad_segments_get_segment_t0_wrapper,
-          "Get start time of VAD segment");
-    
-    m.def("whisper_vad_segments_get_segment_t1", &whisper_vad_segments_get_segment_t1_wrapper,
-          "Get end time of VAD segment");
-    
-    m.def("whisper_vad_free_segments", &whisper_vad_free_segments_wrapper,
-          "Free VAD segments");
-    
-    m.def("whisper_vad_free", &whisper_vad_free_wrapper,
-          "Free VAD context");
 
 #ifdef VERSION_INFO
     m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);
