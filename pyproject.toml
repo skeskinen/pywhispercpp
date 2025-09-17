@@ -49,6 +49,3 @@ extend-ignore = [
   "E501",   # Line too long
 ]
 target-version = "py39"
-
-[tool.setuptools_scm]
-version_file = "_version.py"
