@@ -685,6 +685,135 @@ PYBIND11_MODULE(_pywhispercpp, m) {
     m.def("assign_logits_filter_callback", &assign_logits_filter_callback, "Assigns a logits_filter_callback, takes <whisper_full_params> instance and a callable function with the same parameters which are defined in the interface",
             py::arg("params"), py::arg("callback"));
 
+    ////////////////////////////////////////////////////////////////////////////
+    // VAD (Voice Activity Detection) API bindings
+    
+    // VAD context wrapper
+    struct whisper_vad_context_wrapper {
+        whisper_vad_context* ptr;
+    };
+    
+    // VAD segments wrapper
+    struct whisper_vad_segments_wrapper {
+        whisper_vad_segments* ptr;
+    };
+    
+    py::class_<whisper_vad_context_wrapper>(m, "whisper_vad_context");
+    py::class_<whisper_vad_segments_wrapper>(m, "whisper_vad_segments");
+    
+    // VAD parameters
+    py::class_<whisper_vad_params>(m, "whisper_vad_params")
+        .def(py::init<>())
+        .def_readwrite("threshold", &whisper_vad_params::threshold)
+        .def_readwrite("min_speech_duration_ms", &whisper_vad_params::min_speech_duration_ms)
+        .def_readwrite("min_silence_duration_ms", &whisper_vad_params::min_silence_duration_ms)
+        .def_readwrite("max_speech_duration_s", &whisper_vad_params::max_speech_duration_s)
+        .def_readwrite("speech_pad_ms", &whisper_vad_params::speech_pad_ms)
+        .def_readwrite("samples_overlap", &whisper_vad_params::samples_overlap);
+    
+    // VAD context parameters
+    py::class_<whisper_vad_context_params>(m, "whisper_vad_context_params")
+        .def(py::init<>())
+        .def_readwrite("n_threads", &whisper_vad_context_params::n_threads)
+        .def_readwrite("use_gpu", &whisper_vad_context_params::use_gpu)
+        .def_readwrite("gpu_device", &whisper_vad_context_params::gpu_device);
+    
+    // Default parameters functions
+    m.def("whisper_vad_default_params", &whisper_vad_default_params, "Get default VAD parameters");
+    m.def("whisper_vad_default_context_params", &whisper_vad_default_context_params, "Get default VAD context parameters");
+    
+    // VAD context initialization
+    m.def("whisper_vad_init_from_file_with_params", 
+          [](const char* path_model, whisper_vad_context_params params) {
+              whisper_vad_context* ctx = whisper_vad_init_from_file_with_params(path_model, params);
+              whisper_vad_context_wrapper wrapper;
+              wrapper.ptr = ctx;
+              return wrapper;
+          },
+          "Initialize VAD context from model file",
+          py::arg("path_model"), py::arg("params"));
+    
+    // VAD speech detection
+    m.def("whisper_vad_detect_speech",
+          [](whisper_vad_context_wrapper& vctx, py::array_t<float> pcmf32, int n_samples) {
+              py::buffer_info buf = pcmf32.request();
+              float* samples_ptr = static_cast<float*>(buf.ptr);
+              return whisper_vad_detect_speech(vctx.ptr, samples_ptr, n_samples);
+          },
+          "Detect speech in audio samples",
+          py::arg("vctx"), py::arg("pcmf32"), py::arg("n_samples"));
+    
+    // VAD segments from samples
+    m.def("whisper_vad_segments_from_samples",
+          [](whisper_vad_context_wrapper& vctx, whisper_vad_params params, py::array_t<float> pcmf32, int n_samples) {
+              py::buffer_info buf = pcmf32.request();
+              float* samples_ptr = static_cast<float*>(buf.ptr);
+              whisper_vad_segments* segments = whisper_vad_segments_from_samples(vctx.ptr, params, samples_ptr, n_samples);
+              whisper_vad_segments_wrapper wrapper;
+              wrapper.ptr = segments;
+              return wrapper;
+          },
+          "Get VAD segments from audio samples",
+          py::arg("vctx"), py::arg("params"), py::arg("pcmf32"), py::arg("n_samples"));
+    
+    // VAD segments from probabilities 
+    m.def("whisper_vad_segments_from_probs",
+          [](whisper_vad_context_wrapper& vctx, whisper_vad_params params) {
+              whisper_vad_segments* segments = whisper_vad_segments_from_probs(vctx.ptr, params);
+              whisper_vad_segments_wrapper wrapper;
+              wrapper.ptr = segments;
+              return wrapper;
+          },
+          "Get VAD segments from probabilities",
+          py::arg("vctx"), py::arg("params"));
+    
+    // VAD probability functions
+    m.def("whisper_vad_n_probs", 
+          [](whisper_vad_context_wrapper& vctx) {
+              return whisper_vad_n_probs(vctx.ptr);
+          },
+          "Get number of VAD probabilities");
+    
+    m.def("whisper_vad_probs",
+          [](whisper_vad_context_wrapper& vctx) {
+              float* probs = whisper_vad_probs(vctx.ptr);
+              int n_probs = whisper_vad_n_probs(vctx.ptr);
+              return py::array_t<float>(n_probs, probs);
+          },
+          "Get VAD probabilities array");
+    
+    // VAD segments utility functions
+    m.def("whisper_vad_segments_n_segments",
+          [](whisper_vad_segments_wrapper& segments) {
+              return whisper_vad_segments_n_segments(segments.ptr);
+          },
+          "Get number of VAD segments");
+    
+    m.def("whisper_vad_segments_get_segment_t0",
+          [](whisper_vad_segments_wrapper& segments, int i_segment) {
+              return whisper_vad_segments_get_segment_t0(segments.ptr, i_segment);
+          },
+          "Get start time of VAD segment");
+    
+    m.def("whisper_vad_segments_get_segment_t1",
+          [](whisper_vad_segments_wrapper& segments, int i_segment) {
+              return whisper_vad_segments_get_segment_t1(segments.ptr, i_segment);
+          },
+          "Get end time of VAD segment");
+    
+    // VAD cleanup functions
+    m.def("whisper_vad_free_segments",
+          [](whisper_vad_segments_wrapper& segments) {
+              whisper_vad_free_segments(segments.ptr);
+          },
+          "Free VAD segments");
+    
+    m.def("whisper_vad_free",
+          [](whisper_vad_context_wrapper& vctx) {
+              whisper_vad_free(vctx.ptr);
+          },
+          "Free VAD context");
+
 
 #ifdef VERSION_INFO
     m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);
