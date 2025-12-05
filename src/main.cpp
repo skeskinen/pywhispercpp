@@ -268,8 +268,11 @@ int whisper_full_n_tokens_wrapper(struct whisper_context_wrapper * ctx, int i_se
      return whisper_full_n_tokens(ctx->ptr, i_segment);
 }
 
-const char * whisper_full_get_token_text_wrapper(struct whisper_context_wrapper * ctx, int i_segment, int i_token){
-    return whisper_full_get_token_text(ctx->ptr, i_segment, i_token);
+py::bytes whisper_full_get_token_text_wrapper(struct whisper_context_wrapper * ctx, int i_segment, int i_token){
+    const char* text = whisper_full_get_token_text(ctx->ptr, i_segment, i_token);
+    // Return as raw bytes to allow Python to handle UTF-8 decoding
+    // (whisper tokens can split multi-byte UTF-8 characters)
+    return py::bytes(text, strlen(text));
 }
 
 whisper_token whisper_full_get_token_id_wrapper(struct whisper_context_wrapper * ctx, int i_segment, int i_token){
