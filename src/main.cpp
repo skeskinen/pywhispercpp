@@ -741,6 +741,8 @@ PYBIND11_MODULE(_pywhispercpp, m) {
           [](whisper_vad_context_wrapper& vctx, py::array_t<float> pcmf32, int n_samples) {
               py::buffer_info buf = pcmf32.request();
               float* samples_ptr = static_cast<float*>(buf.ptr);
+
+              py::gil_scoped_release release;
               return whisper_vad_detect_speech(vctx.ptr, samples_ptr, n_samples);
           },
           "Detect speech in audio samples",
@@ -751,7 +753,12 @@ PYBIND11_MODULE(_pywhispercpp, m) {
           [](whisper_vad_context_wrapper& vctx, whisper_vad_params params, py::array_t<float> pcmf32, int n_samples) {
               py::buffer_info buf = pcmf32.request();
               float* samples_ptr = static_cast<float*>(buf.ptr);
+
+              py::gil_scoped_release release;
               whisper_vad_segments* segments = whisper_vad_segments_from_samples(vctx.ptr, params, samples_ptr, n_samples);
+
+              // Re-acquire GIL before creating Python wrapper object
+              py::gil_scoped_acquire acquire;
               whisper_vad_segments_wrapper wrapper;
               wrapper.ptr = segments;
               return wrapper;
