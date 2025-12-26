@@ -65,6 +65,13 @@ struct whisper_context_wrapper whisper_init_from_file_wrapper(const char * path_
     return ctw_w;
 }
 
+struct whisper_context_wrapper whisper_init_from_file_with_params_wrapper(const char * path_model, struct whisper_context_params params){
+    struct whisper_context * ctx = whisper_init_from_file_with_params(path_model, params);
+    struct whisper_context_wrapper ctw_w;
+    ctw_w.ptr = ctx;
+    return ctw_w;
+}
+
 struct whisper_context_wrapper whisper_init_from_buffer_wrapper(void * buffer, size_t buffer_size){
     struct whisper_context * ctx = whisper_init_from_buffer(buffer, buffer_size);
     struct whisper_context_wrapper ctw_w;
@@ -415,6 +422,7 @@ PYBIND11_MODULE(_pywhispercpp, m) {
             .def_readwrite("ptsum", &whisper_token_data::ptsum)
             .def_readwrite("t0", &whisper_token_data::t0)
             .def_readwrite("t1", &whisper_token_data::t1)
+            .def_readwrite("t_dtw", &whisper_token_data::t_dtw)
             .def_readwrite("vlen", &whisper_token_data::vlen);
 
     py::class_<whisper_model_loader_wrapper>(m,"whisper_model_loader")
@@ -423,6 +431,10 @@ PYBIND11_MODULE(_pywhispercpp, m) {
     DEF_RELEASE_GIL("whisper_init_from_file", &whisper_init_from_file_wrapper, "Various functions for loading a ggml whisper model.\n"
                                                                     "Allocate (almost) all memory needed for the model.\n"
                                                                     "Return NULL on failure");
+    DEF_RELEASE_GIL("whisper_init_from_file_with_params", &whisper_init_from_file_with_params_wrapper,
+                    "Load whisper model with context parameters (supports DTW timestamps).\n"
+                    "Allocate (almost) all memory needed for the model.\n"
+                    "Return NULL on failure");
     DEF_RELEASE_GIL("whisper_init_from_buffer", &whisper_init_from_buffer_wrapper, "Various functions for loading a ggml whisper model.\n"
                                                                         "Allocate (almost) all memory needed for the model.\n"
                                                                         "Return NULL on failure");
@@ -515,6 +527,38 @@ PYBIND11_MODULE(_pywhispercpp, m) {
         .value("WHISPER_SAMPLING_GREEDY", whisper_sampling_strategy::WHISPER_SAMPLING_GREEDY)
         .value("WHISPER_SAMPLING_BEAM_SEARCH", whisper_sampling_strategy::WHISPER_SAMPLING_BEAM_SEARCH)
         .export_values();
+
+    // Alignment heads preset for DTW token timestamps
+    py::enum_<whisper_alignment_heads_preset>(m, "whisper_alignment_heads_preset")
+        .value("WHISPER_AHEADS_NONE", whisper_alignment_heads_preset::WHISPER_AHEADS_NONE)
+        .value("WHISPER_AHEADS_N_TOP_MOST", whisper_alignment_heads_preset::WHISPER_AHEADS_N_TOP_MOST)
+        .value("WHISPER_AHEADS_CUSTOM", whisper_alignment_heads_preset::WHISPER_AHEADS_CUSTOM)
+        .value("WHISPER_AHEADS_TINY_EN", whisper_alignment_heads_preset::WHISPER_AHEADS_TINY_EN)
+        .value("WHISPER_AHEADS_TINY", whisper_alignment_heads_preset::WHISPER_AHEADS_TINY)
+        .value("WHISPER_AHEADS_BASE_EN", whisper_alignment_heads_preset::WHISPER_AHEADS_BASE_EN)
+        .value("WHISPER_AHEADS_BASE", whisper_alignment_heads_preset::WHISPER_AHEADS_BASE)
+        .value("WHISPER_AHEADS_SMALL_EN", whisper_alignment_heads_preset::WHISPER_AHEADS_SMALL_EN)
+        .value("WHISPER_AHEADS_SMALL", whisper_alignment_heads_preset::WHISPER_AHEADS_SMALL)
+        .value("WHISPER_AHEADS_MEDIUM_EN", whisper_alignment_heads_preset::WHISPER_AHEADS_MEDIUM_EN)
+        .value("WHISPER_AHEADS_MEDIUM", whisper_alignment_heads_preset::WHISPER_AHEADS_MEDIUM)
+        .value("WHISPER_AHEADS_LARGE_V1", whisper_alignment_heads_preset::WHISPER_AHEADS_LARGE_V1)
+        .value("WHISPER_AHEADS_LARGE_V2", whisper_alignment_heads_preset::WHISPER_AHEADS_LARGE_V2)
+        .value("WHISPER_AHEADS_LARGE_V3", whisper_alignment_heads_preset::WHISPER_AHEADS_LARGE_V3)
+        .value("WHISPER_AHEADS_LARGE_V3_TURBO", whisper_alignment_heads_preset::WHISPER_AHEADS_LARGE_V3_TURBO)
+        .export_values();
+
+    // Context params for model initialization (includes DTW settings)
+    py::class_<whisper_context_params>(m, "whisper_context_params")
+        .def(py::init<>())
+        .def_readwrite("use_gpu", &whisper_context_params::use_gpu)
+        .def_readwrite("flash_attn", &whisper_context_params::flash_attn)
+        .def_readwrite("gpu_device", &whisper_context_params::gpu_device)
+        .def_readwrite("dtw_token_timestamps", &whisper_context_params::dtw_token_timestamps)
+        .def_readwrite("dtw_aheads_preset", &whisper_context_params::dtw_aheads_preset)
+        .def_readwrite("dtw_n_top", &whisper_context_params::dtw_n_top)
+        .def_readwrite("dtw_mem_size", &whisper_context_params::dtw_mem_size);
+
+    m.def("whisper_context_default_params", &whisper_context_default_params, "Get default context parameters");
 
     py::class_<whisper_full_params>(m, "__whisper_full_params__internal")
         .def(py::init<>())
