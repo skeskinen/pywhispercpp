@@ -16,6 +16,7 @@
 #include <pybind11/numpy.h>
 
 #include "whisper.h"
+#include "ggml-backend.h"
 
 
 #define STRINGIFY(x) #x
@@ -89,6 +90,37 @@ struct whisper_context_wrapper whisper_init_wrapper(struct whisper_model_loader_
 void whisper_free_wrapper(struct whisper_context_wrapper * ctx_w){
     whisper_free(ctx_w->ptr);
 };
+
+// Returns list of available backend devices with their types
+// Types: 0=CPU, 1=GPU, 2=IGPU (integrated GPU), 3=ACCEL
+py::list get_backend_devices() {
+    py::list devices;
+    size_t count = ggml_backend_dev_count();
+    for (size_t i = 0; i < count; i++) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        py::dict device_info;
+        device_info["name"] = ggml_backend_dev_name(dev);
+        device_info["description"] = ggml_backend_dev_description(dev);
+        device_info["type"] = static_cast<int>(ggml_backend_dev_type(dev));
+        devices.append(device_info);
+    }
+    return devices;
+}
+
+// Returns list of registered backend types (e.g., "CPU", "Vulkan", "CUDA")
+// This shows what GPU support is compiled in, regardless of hardware
+py::list get_backend_registrations() {
+    py::list backends;
+    size_t count = ggml_backend_reg_count();
+    for (size_t i = 0; i < count; i++) {
+        ggml_backend_reg_t reg = ggml_backend_reg_get(i);
+        py::dict backend_info;
+        backend_info["name"] = ggml_backend_reg_name(reg);
+        backend_info["device_count"] = ggml_backend_reg_dev_count(reg);
+        backends.append(backend_info);
+    }
+    return backends;
+}
 
 int whisper_pcm_to_mel_wrapper(
         struct whisper_context_wrapper * ctx,
@@ -519,6 +551,19 @@ PYBIND11_MODULE(_pywhispercpp, m) {
 
     m.def("whisper_print_system_info", &whisper_print_system_info);
 
+    m.def("get_backend_devices", &get_backend_devices,
+          "Get list of available ggml backend devices.\n"
+          "Returns a list of dicts with 'name', 'description', and 'type' keys.\n"
+          "Types: 0=CPU, 1=GPU, 2=IGPU (integrated GPU), 3=ACCEL");
+
+    m.def("get_backend_registrations", &get_backend_registrations,
+          "Get list of registered backend types (compiled-in support).\n"
+          "Returns a list of dicts with 'name' and 'device_count' keys.\n"
+          "Use this to check if GPU backends like Vulkan/CUDA/Metal are available.");
+
+    m.def("load_all_backends", &ggml_backend_load_all,
+          "Load all available ggml backends (Vulkan, CUDA, Metal, etc).\n"
+          "Call this before get_backend_registrations() to discover GPU backends.");
 
 
     //////////////////////
