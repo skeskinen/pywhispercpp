@@ -683,6 +683,7 @@ PYBIND11_MODULE(_pywhispercpp, m) {
         .def_readwrite("split_on_word", &WhisperFullParamsWrapper::split_on_word)
         .def_readwrite("max_tokens", &WhisperFullParamsWrapper::max_tokens)
         .def_readwrite("audio_ctx", &WhisperFullParamsWrapper::audio_ctx)
+        .def_readwrite("tdrz_enable", &WhisperFullParamsWrapper::tdrz_enable)
         .def_property("suppress_regex",
             [](WhisperFullParamsWrapper &self) {
                 return py::str(self.suppress_regex ? self.suppress_regex : "");
@@ -731,6 +732,12 @@ PYBIND11_MODULE(_pywhispercpp, m) {
 
 
     py::implicitly_convertible<whisper_full_params, WhisperFullParamsWrapper>();
+
+    m.def("whisper_full_get_segment_speaker_turn_next",
+          [](struct whisper_context_wrapper * ctx, int i_segment) {
+              return whisper_full_get_segment_speaker_turn_next(ctx->ptr, i_segment);
+          },
+          "Return whether the next segment is predicted as a speaker turn for the given segment.");
 
     m.def("whisper_full_default_params", &whisper_full_default_params_wrapper);
 
