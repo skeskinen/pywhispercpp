@@ -6,4 +6,4 @@
 [submodule "whisper.cpp"]
     path = whisper.cpp
 	url = https://github.com/skeskinen/smc-whispercpp.git
-    branch = master
+	branch = main
